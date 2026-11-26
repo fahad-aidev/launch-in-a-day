@@ -73,6 +73,23 @@ def approval_gate(tool, args, tool_context):
     return None  # go ahead and call the Publisher
 
 
+# --- Safety filter: the page will be public, so it may not run code or load other sites
+def make_safe(html: str, css: str) -> tuple[str, str]:
+    """Removes scripts, event handlers and external links from model-written files."""
+    html = re.sub(r"<script\b.*?</script\s*>", "", html, flags=re.S | re.I)
+    html = re.sub(r"</?(script|iframe|object|embed|form|base)\b[^>]*>", "", html, flags=re.I)
+    html = re.sub(r"<meta\s+http-equiv[^>]*>", "", html, flags=re.I)
+    html = re.sub(r"\son[a-z]+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", html, flags=re.I)
+    html = re.sub(
+        r"\b(href|src|srcset|action|poster)\s*=\s*([\"'])\s*(https?:|//|javascript:|data:text)[^\"']*\2",
+        r'\1="#"', html, flags=re.I,
+    )
+    css = re.sub(r"@import[^;]*;", "", css, flags=re.I)
+    css = re.sub(r"url\(\s*['\"]?\s*(https?:|//|javascript:)[^)]*\)", "none", css, flags=re.I)
+    css += "\n/* Added by the Director: never scroll sideways on phones */\nhtml, body { overflow-x: clip; }\n"
+    return html, css
+
+
 # --- Code that runs after every tool call ----------------------------------------
 def save_site_files(tool, args, tool_context, tool_response):
     """When the Builder answers, save its two files to out/ with plain code.
@@ -89,12 +106,14 @@ def save_site_files(tool, args, tool_context, tool_response):
     if not (html and css):
         return {"status": "error", "message": "The builder did not return an html and a css code block."}
 
+    safe_html, safe_css = make_safe(html.group(1), css.group(1))
+
     # Only these two file names, only inside out/: the model cannot choose paths.
     launch_dir = OUT_DIR / datetime.now().strftime("launch-%Y%m%d-%H%M%S")
     for folder in (launch_dir, OUT_DIR / "latest"):
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / "index.html").write_text(html.group(1), encoding="utf-8")
-        (folder / "style.css").write_text(css.group(1), encoding="utf-8")
+        (folder / "index.html").write_text(safe_html, encoding="utf-8")
+        (folder / "style.css").write_text(safe_css, encoding="utf-8")
 
     tool_context.state["site_dir"] = str(launch_dir)  # remembered for the publish step
     return {"status": "saved", "preview": "out/latest/index.html", "files": ["index.html", "style.css"]}
