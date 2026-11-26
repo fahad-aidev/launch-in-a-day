@@ -1,0 +1,8 @@
+# What `gcloud run deploy --source .` uploads to Google Cloud.
+# Ignore everything, then allow only what the Brand agent needs.
+# So .env files, the GitHub token, .venv and out/ never leave the laptop.
+*
+!Dockerfile
+!requirements.txt
+!brand_agent/
+!brand_agent/*.py
